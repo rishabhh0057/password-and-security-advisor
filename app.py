@@ -7,7 +7,6 @@ import string
 import requests
 import pandas as pd
 import streamlit as st
-import altair as alt
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.agents import create_agent
 
