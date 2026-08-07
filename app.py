@@ -89,7 +89,7 @@ def run_ai_advisor_agent(api_key, model_name, password, zxcvbn_res, entropy, com
         score = zxcvbn_res['score']
         warnings = zxcvbn_res['feedback']['warning']
         suggestions = zxcvbn_res['feedback']['suggestions']
-        crack_time = zxcvbn_res['crack_times_display']['offline_slow_hashing_1e4_per_second']
+        crack_time = zxcvbn_res['crack_times_display'].get('offline_slow_hashing_1e4_per_second', 'N/A')
         
         prompt = f"""
         You are a Cybersecurity Password Security Agent. Analyze the following password characteristics and give concise, high-value advice on how the user can improve their security without revealing or storing sensitive secrets.
@@ -193,11 +193,16 @@ if password_input:
 
     with col_details:
         st.subheader("⏱️ Estimated Crack Time")
-        crack_times = res['crack_times_display']
+        crack_times = res.get('crack_times_display', {})
         
-        st.write(f"• **Online Fast Attack (100 per sec):** `{crack_times['online_throttled_100_per_hour']}`")
-        st.write(f"• **Offline Fast Hashing (10B per sec):** `{crack_times['offline_fast_hashing_1e10_per_second']}`")
-        st.write(f"• **Offline Slow Hashing (10k per sec):** `{crack_times['offline_slow_hashing_1e4_per_second']}`")
+        # Safe dict lookup using .get() with fallbacks
+        online_time = crack_times.get('online_throttled_100_per_hour') or crack_times.get('online_no_throttling_10_per_second', 'N/A')
+        fast_hash_time = crack_times.get('offline_fast_hashing_1e10_per_second', 'N/A')
+        slow_hash_time = crack_times.get('offline_slow_hashing_1e4_per_second', 'N/A')
+
+        st.write(f"• **Online Attack:** `{online_time}`")
+        st.write(f"• **Offline Fast Hashing (10B/sec):** `{fast_hash_time}`")
+        st.write(f"• **Offline Slow Hashing (10k/sec):** `{slow_hash_time}`")
 
     st.markdown("---")
 
