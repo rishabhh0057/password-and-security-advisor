@@ -1,5 +1,9 @@
 import math
 import re
+import hashlib
+import requests
+import string
+import secrets
 import streamlit as st
 import plotly.graph_objects as go
 from zxcvbn import zxcvbn
@@ -8,79 +12,100 @@ from zxcvbn import zxcvbn
 # 1. PAGE CONFIGURATION & STYLING
 # ==========================================
 st.set_page_config(
-    page_title="Password Security Advisor Agent",
+    page_title="CyberSecurity Password Agent",
     page_icon="🛡️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom Styling
+# Custom Styling for modern look
 st.markdown("""
     <style>
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 20px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: 50px;
+        white-space: pre-wrap;
+        background-color: transparent;
+        border-radius: 5px 5px 0px 0px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+        font-weight: 600;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: rgba(34, 197, 94, 0.1);
+        border-bottom: 2px solid #22C55E !important;
+        color: #22C55E !important;
+    }
     .metric-card {
-        background-color: #1E222D;
+        background-color: #1E1E1E;
         padding: 15px;
         border-radius: 10px;
-        border: 1px solid #2E3440;
-        text-align: center;
-    }
-    .stProgress > div > div > div > div {
-        border-radius: 10px;
+        border: 1px solid #333;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     }
     </style>
 """, unsafe_allow_html=True)
 
 
 # ==========================================
-# 2. CORE SECURITY CALCULATIONS & ANALYSIS
+# 2. CORE SECURITY FUNCTIONS
 # ==========================================
 def calculate_entropy(password):
-    """Calculates Shannon entropy in bits."""
-    if not password:
-        return 0.0
-    
+    if not password: return 0.0
     pool_size = 0
-    if re.search(r'[a-z]', password):
-        pool_size += 26
-    if re.search(r'[A-Z]', password):
-        pool_size += 26
-    if re.search(r'[0-9]', password):
-        pool_size += 10
-    if re.search(r'[^a-zA-Z0-9]', password):
-        pool_size += 32
-        
-    if pool_size == 0:
-        return 0.0
-        
-    entropy = len(password) * math.log2(pool_size)
-    return round(entropy, 2)
+    if re.search(r'[a-z]', password): pool_size += 26
+    if re.search(r'[A-Z]', password): pool_size += 26
+    if re.search(r'[0-9]', password): pool_size += 10
+    if re.search(r'[^a-zA-Z0-9]', password): pool_size += 32
+    if pool_size == 0: return 0.0
+    return round(len(password) * math.log2(pool_size), 2)
 
+def check_pwned_api(password):
+    """Checks HaveIBeenPwned via k-Anonymity (safe, doesn't send full password)."""
+    sha1_password = hashlib.sha1(password.encode('utf-8')).hexdigest().upper()
+    head, tail = sha1_password[:5], sha1_password[5:]
+    url = f"https://api.pwnedpasswords.com/range/{head}"
+    try:
+        response = requests.get(url, timeout=5)
+        if response.status_code != 200: return -1
+        hashes = (line.split(':') for line in response.text.splitlines())
+        for h, count in hashes:
+            if h == tail: return int(count)
+        return 0
+    except:
+        return -1 # API failure
 
-def evaluate_corporate_policy(password, min_length, req_upper, req_lower, req_digits, req_specials):
-    """Checks password against explicit corporate policy compliance rules."""
-    checks = {
-        f"Minimum Length ({min_length} chars)": len(password) >= min_length,
-        "Contains Uppercase Letter": bool(re.search(r'[A-Z]', password)) if req_upper else True,
-        "Contains Lowercase Letter": bool(re.search(r'[a-z]', password)) if req_lower else True,
-        "Contains Number": bool(re.search(r'[0-9]', password)) if req_digits else True,
-        "Contains Special Character": bool(re.search(r'[^a-zA-Z0-9]', password)) if req_specials else True,
-    }
-    compliant = all(checks.values())
-    return compliant, checks
+def generate_secure_password(length, use_upper, use_lower, use_digits, use_special):
+    chars = ""
+    if use_upper: chars += string.ascii_uppercase
+    if use_lower: chars += string.ascii_lowercase
+    if use_digits: chars += string.digits
+    if use_special: chars += "!@#$%^&*()-_=+<>?"
+    
+    if not chars: return "Please select at least one character type."
+    
+    # Ensure at least one of each selected type is present
+    password = []
+    if use_upper: password.append(secrets.choice(string.ascii_uppercase))
+    if use_lower: password.append(secrets.choice(string.ascii_lowercase))
+    if use_digits: password.append(secrets.choice(string.digits))
+    if use_special: password.append(secrets.choice("!@#$%^&*()-_=+<>?"))
+    
+    while len(password) < length:
+        password.append(secrets.choice(chars))
+        
+    secrets.SystemRandom().shuffle(password)
+    return "".join(password)
 
 
 # ==========================================
 # 3. AI REMEDIATION AGENT (GROQ)
 # ==========================================
-def run_ai_advisor_agent(api_key, model_name, password, zxcvbn_res, entropy, compliance_status):
-    """AI Agent that analyzes weak password patterns and provides actionable improvement strategies."""
+def run_ai_advisor_agent(api_key, model_name, password, zxcvbn_res, entropy):
     if not api_key:
-        return """⚠️ **Groq API Key not detected.** 
-        
-*General Agent Advice:*
-1. **Increase Length:** Use at least 12–16 characters (e.g., passphrases).
-2. **Avoid Common Substitutions:** Replacing 'a' with '@' or 'e' with '3' is easily cracked by dictionary tools.
-3. **Mix Character Types:** Combine uppercase, lowercase, numbers, and symbols."""
+        return "⚠️ **Groq API Key not detected.** Enter it in the sidebar to unlock AI guidance."
 
     try:
         from groq import Groq
@@ -89,31 +114,24 @@ def run_ai_advisor_agent(api_key, model_name, password, zxcvbn_res, entropy, com
         score = zxcvbn_res['score']
         warnings = zxcvbn_res['feedback']['warning']
         suggestions = zxcvbn_res['feedback']['suggestions']
-        crack_time = zxcvbn_res['crack_times_display'].get('offline_slow_hashing_1e4_per_second', 'N/A')
+        crack_time = zxcvbn_res.get('crack_times_display', {}).get('offline_slow_hashing_1e4_per_second', 'N/A')
         
         prompt = f"""
-        You are a Cybersecurity Password Security Agent. Analyze the following password characteristics and give concise, high-value advice on how the user can improve their security without revealing or storing sensitive secrets.
-
-        Password Evaluation Metrics:
-        - ZXCVBN Strength Score: {score}/4
-        - Calculated Entropy: {entropy} bits
-        - Offline Crack Time Estimate: {crack_time}
-        - Warning: {warnings if warnings else 'None'}
+        You are an elite Cybersecurity Advisor. Analyze these metrics and give concise, expert advice:
+        - Strength Score: {score}/4
+        - Entropy: {entropy} bits
+        - Crack Time Estimate: {crack_time}
         - Detected Weaknesses: {', '.join(suggestions) if suggestions else 'None'}
-        - Corporate Policy Compliant: {compliance_status}
-
+        
         Provide:
-        1. **Vulnerability Analysis**: Explain why this password layout is strong or weak in plain English.
-        2. **Actionable Fixes**: Give 3 structural advice tips (e.g., recommend multi-word passphrases instead of complex short strings).
-        3. **DO NOT** output actual plain-text password recommendations to avoid leakage.
+        1. **Vulnerability Analysis**: Why is this weak/strong?
+        2. **Actionable Fixes**: 3 bullet points to improve it structurally.
+        **DO NOT output actual password examples or repeat the user's password.**
         """
         
         response = client.chat.completions.create(
             model=model_name,
-            messages=[
-                {"role": "system", "content": "You are a professional cybersecurity consultant giving helpful password guidance."},
-                {"role": "user", "content": prompt}
-            ],
+            messages=[{"role": "user", "content": prompt}],
             temperature=0.5
         )
         return response.choices[0].message.content
@@ -122,123 +140,164 @@ def run_ai_advisor_agent(api_key, model_name, password, zxcvbn_res, entropy, com
 
 
 # ==========================================
-# 4. STREAMLIT UI & SIDEBAR
+# 4. SIDEBAR CONFIGURATION
 # ==========================================
-st.sidebar.title("⚙️ Security Agent Config")
+st.sidebar.title("⚙️ Security Settings")
 
-st.sidebar.subheader("⚡ AI Engine Settings")
-groq_api_key = st.sidebar.text_input("🔑 Groq API Key (Optional)", type="password", help="Enables the AI Security Advisor Agent for smart feedback.")
+st.sidebar.subheader("🤖 AI Engine")
+groq_api_key = st.sidebar.text_input("🔑 Groq API Key (Optional)", type="password")
 groq_model = st.sidebar.selectbox("Groq Model", ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"])
 
-st.sidebar.subheader("🏢 Corporate Policy Rules")
-min_len = st.sidebar.slider("Min Password Length", 8, 32, 12)
-req_upper = st.sidebar.checkbox("Require Uppercase (A-Z)", value=True)
-req_lower = st.sidebar.checkbox("Require Lowercase (a-z)", value=True)
-req_digits = st.sidebar.checkbox("Require Numbers (0-9)", value=True)
-req_specials = st.sidebar.checkbox("Require Special Symbols (!@#$)", value=True)
+st.sidebar.markdown("---")
+st.sidebar.info("💡 **Pro Tip:** Switch to the '🔐 Generator' tab to create cryptographically secure passphrases instantly.")
 
 
 # ==========================================
-# 5. MAIN CONTENT AREA
+# 5. MAIN UI - TABS
 # ==========================================
-st.title("🛡️ Password Security Advisor & Analysis Agent")
-st.caption("Evaluate password strength, entropy, crack time, and corporate compliance with AI-powered security guidance.")
+st.title("🛡️ Ultimate Password Security Suite")
+st.caption("Analyze vulnerabilities, generate secure keys, and check against global data breaches.")
 
-password_input = st.text_input("Enter a password to analyze:", type="password", help="Analyzed entirely locally in memory. Never saved or logged.")
+# Initialize session state for password input across tabs
+if "master_password" not in st.session_state:
+    st.session_state.master_password = ""
 
-if password_input:
-    # Run Security Diagnostics
-    res = zxcvbn(password_input)
-    entropy = calculate_entropy(password_input)
-    score = res['score']  # 0 to 4
-    is_compliant, policy_checks = evaluate_corporate_policy(
-        password_input, min_len, req_upper, req_lower, req_digits, req_specials
-    )
+tab1, tab2, tab3 = st.tabs(["🔍 Strength Analyzer & Breach Check", "🔐 Secure Generator", "🧰 Developer Tools & Hashes"])
 
-    score_labels = {0: "Very Weak", 1: "Weak", 2: "Fair", 3: "Strong", 4: "Very Strong"}
-    score_colors = {0: "#FF4B4B", 1: "#FFA500", 2: "#FACC15", 3: "#22C55E", 4: "#10B981"}
+# ------------------------------------------
+# TAB 1: ANALYZER & BREACH CHECK
+# ------------------------------------------
+with tab1:
+    password_input = st.text_input("Enter a password to analyze:", value=st.session_state.master_password, type="password", key="master_password")
 
-    st.markdown("---")
-    
-    # 📊 Key Metrics Dashboard
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Strength Score", f"{score} / 4 ({score_labels[score]})")
-    m2.metric("Entropy", f"{entropy} bits")
-    m3.metric("Length", f"{len(password_input)} chars")
-    m4.metric("Policy Status", "Pass ✅" if is_compliant else "Fail ❌")
-
-    # Visual Gauge Chart for Strength
-    fig = go.Figure(go.Indicator(
-        mode="gauge+number",
-        value=score,
-        domain={'x': [0, 1], 'y': [0, 1]},
-        title={'text': "Security Score", 'font': {'size': 20}},
-        gauge={
-            'axis': {'range': [0, 4], 'tickwidth': 1, 'tickcolor': "white"},
-            'bar': {'color': score_colors[score]},
-            'steps': [
-                {'range': [0, 1], 'color': '#331111'},
-                {'range': [1, 2], 'color': '#332211'},
-                {'range': [2, 3], 'color': '#333311'},
-                {'range': [3, 4], 'color': '#113311'},
-            ],
-        }
-    ))
-    fig.update_layout(height=220, margin=dict(l=20, r=20, t=30, b=20), paper_bgcolor="rgba(0,0,0,0)")
-
-    col_chart, col_details = st.columns([1, 1])
-
-    with col_chart:
-        st.plotly_chart(fig, use_container_width=True)
-
-    with col_details:
-        st.subheader("⏱️ Estimated Crack Time")
-        crack_times = res.get('crack_times_display', {})
+    if password_input:
+        # Run Diagnostics
+        res = zxcvbn(password_input)
+        entropy = calculate_entropy(password_input)
+        score = res['score'] 
         
-        # Safe dict lookup using .get() with fallbacks
-        online_time = crack_times.get('online_throttled_100_per_hour') or crack_times.get('online_no_throttling_10_per_second', 'N/A')
-        fast_hash_time = crack_times.get('offline_fast_hashing_1e10_per_second', 'N/A')
-        slow_hash_time = crack_times.get('offline_slow_hashing_1e4_per_second', 'N/A')
+        score_labels = {0: "Critical Danger", 1: "Very Weak", 2: "Moderate", 3: "Strong", 4: "Unbreakable (Almost)"}
+        score_colors = {0: "#FF4B4B", 1: "#FFA500", 2: "#FACC15", 3: "#22C55E", 4: "#10B981"}
 
-        st.write(f"• **Online Attack:** `{online_time}`")
-        st.write(f"• **Offline Fast Hashing (10B/sec):** `{fast_hash_time}`")
-        st.write(f"• **Offline Slow Hashing (10k/sec):** `{slow_hash_time}`")
+        st.markdown("---")
+        
+        # 📊 Top Metrics
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("🛡️ Security Score", f"{score} / 4", score_labels[score])
+        c2.metric("🧩 Entropy", f"{entropy} bits")
+        c3.metric("📏 Length", f"{len(password_input)} chars")
+        
+        # Gauge Chart
+        fig = go.Figure(go.Indicator(
+            mode="gauge+number",
+            value=score,
+            domain={'x': [0, 1], 'y': [0, 1]},
+            title={'text': "Strength Meter", 'font': {'size': 20, 'color': 'white'}},
+            gauge={
+                'axis': {'range': [0, 4], 'tickwidth': 1, 'tickcolor': "white"},
+                'bar': {'color': score_colors[score]},
+                'steps': [
+                    {'range': [0, 1], 'color': '#331111'},
+                    {'range': [1, 2], 'color': '#442200'},
+                    {'range': [2, 3], 'color': '#113311'},
+                    {'range': [3, 4], 'color': '#004411'},
+                ],
+            }
+        ))
+        fig.update_layout(height=250, margin=dict(l=20, r=20, t=40, b=20), paper_bgcolor="rgba(0,0,0,0)")
 
-    st.markdown("---")
+        col_chart, col_details = st.columns([1, 1])
+        with col_chart:
+            st.plotly_chart(fig, use_container_width=True)
 
-    # Policy & Pattern Breakdown
-    col_pol, col_patt = st.columns(2)
+        with col_details:
+            st.subheader("⏱️ Time to Crack")
+            crack_times = res.get('crack_times_display', {})
+            st.code(f"""
+Online Attack (Throttled): {crack_times.get('online_throttled_100_per_hour', 'N/A')}
+Offline Fast Hash (MD5):   {crack_times.get('offline_fast_hashing_1e10_per_second', 'N/A')}
+Offline Slow Hash (Bcrypt):{crack_times.get('offline_slow_hashing_1e4_per_second', 'N/A')}
+            """, language="text")
 
-    with col_pol:
-        st.subheader("📋 Corporate Policy Compliance Check")
-        for check_name, passed in policy_checks.items():
-            status_icon = "✅" if passed else "❌"
-            st.write(f"{status_icon} **{check_name}**")
+        st.markdown("---")
+        
+        # Analysis & Breach Section
+        c_pwn, c_ai = st.columns(2)
+        
+        with c_pwn:
+            st.subheader("🚨 Live Data Breach Check")
+            st.caption("Checks the HaveIBeenPwned database securely using k-Anonymity.")
+            if st.button("🔍 Check if breached"):
+                with st.spinner("Querying breach database..."):
+                    pwn_count = check_pwned_api(password_input)
+                    if pwn_count > 0:
+                        st.error(f"⚠️ **COMPROMISED!** This password has been seen in data breaches **{pwn_count:,} times**! Do not use it.")
+                    elif pwn_count == 0:
+                        st.success("✅ **Clean!** This password was not found in any known public data breaches.")
+                    else:
+                        st.warning("Could not reach the breach database at this time.")
 
-    with col_patt:
-        st.subheader("🔍 Pattern & Weakness Findings")
-        warning = res['feedback']['warning']
-        suggestions = res['feedback']['suggestions']
+            st.subheader("🔍 Local Pattern Feedback")
+            if res['feedback']['warning']:
+                st.warning(res['feedback']['warning'])
+            for sug in res['feedback']['suggestions']:
+                st.info(f"💡 {sug}")
 
-        if warning:
-            st.error(f"**Warning:** {warning}")
-        else:
-            st.success("No common dictionary pattern warnings detected.")
+        with c_ai:
+            st.subheader("🤖 AI Security Agent")
+            if st.button("💬 Generate AI Security Report"):
+                with st.spinner("Analyzing threat vectors..."):
+                    report = run_ai_advisor_agent(groq_api_key, groq_model, password_input, res, entropy)
+                    st.markdown(f"> {report}")
 
-        if suggestions:
-            st.info("**Detected Issues:**")
-            for sug in suggestions:
-                st.write(f"• {sug}")
+# ------------------------------------------
+# TAB 2: SECURE GENERATOR
+# ------------------------------------------
+with tab2:
+    st.subheader("🛠️ Cryptographically Secure Password Generator")
+    st.write("Generate military-grade passwords locally in your browser.")
+    
+    g_col1, g_col2 = st.columns([1, 2])
+    
+    with g_col1:
+        pwd_len = st.slider("Password Length", min_value=8, max_value=64, value=16, step=1)
+        inc_upper = st.checkbox("Uppercase (A-Z)", value=True)
+        inc_lower = st.checkbox("Lowercase (a-z)", value=True)
+        inc_nums = st.checkbox("Numbers (0-9)", value=True)
+        inc_syms = st.checkbox("Symbols (!@#$)", value=True)
+        
+        if st.button("🚀 Generate Password", use_container_width=True):
+            new_pwd = generate_secure_password(pwd_len, inc_upper, inc_lower, inc_nums, inc_syms)
+            # Update session state so it automatically loads into Tab 1
+            st.session_state.master_password = new_pwd
+            st.rerun()
 
-    st.markdown("---")
+    with g_col2:
+        st.info("Your generated password will appear in the Analyzer tab instantly. Try adjusting the length to see how it affects entropy and crack times!")
+        if st.session_state.master_password:
+            st.success("✅ Password generated and loaded into Analyzer!")
+            st.code(st.session_state.master_password, language="text")
 
-    # 🤖 AI Remediation Agent Section
-    st.subheader("🤖 AI Security Advisor Agent Guidance")
-    if st.button("💬 Run AI Analysis Agent"):
-        with st.spinner("Agent analyzing password security posture..."):
-            agent_feedback = run_ai_advisor_agent(
-                groq_api_key, groq_model, password_input, res, entropy, "PASSED" if is_compliant else "FAILED"
-            )
-            st.markdown(agent_feedback)
-else:
-    st.info("👆 Enter a password in the box above to get instant feedback and security metrics.")
+# ------------------------------------------
+# TAB 3: DEV TOOLS & HASHES
+# ------------------------------------------
+with tab3:
+    st.subheader("🧰 Developer Cryptography Toolkit")
+    st.write("See how your password looks when processed through standard cryptographic hashing algorithms.")
+    
+    if st.session_state.master_password:
+        pw = st.session_state.master_password.encode('utf-8')
+        
+        st.text("SHA-256 (Industry Standard)")
+        st.code(hashlib.sha256(pw).hexdigest(), language="text")
+        
+        st.text("SHA-512 (High Security)")
+        st.code(hashlib.sha512(pw).hexdigest(), language="text")
+        
+        st.text("SHA-1 (Deprecated / Vulnerable)")
+        st.code(hashlib.sha1(pw).hexdigest(), language="text")
+        
+        st.text("MD5 (Broken / Highly Vulnerable)")
+        st.code(hashlib.md5(pw).hexdigest(), language="text")
+    else:
+        st.warning("Go to the Analyzer tab and enter a password to see its hashes.")
